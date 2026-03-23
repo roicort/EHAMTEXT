@@ -54,7 +54,15 @@ class QuDeq:
             return np.array(b)
         
     def _quantize(self, x, min, max, m):
-        return round((m-1)*(x - min)/(max - min))
+        if m <= 1:
+            return 0
+        if not np.isfinite(x) or not np.isfinite(min) or not np.isfinite(max):
+            return 0
+        span = max - min
+        if span == 0:
+            return 0
+        value = round((m - 1) * (x - min) / span)
+        return int(np.clip(value, 0, m - 1))
 
     def _dequantize(self, i, min, max, m):
-        return (max - min)/2 if m == 1 else (max - min)*i/(m - 1) + min
+        return min + (max - min)/2 if m == 1 else (max - min)*i/(m - 1) + min

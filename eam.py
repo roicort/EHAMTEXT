@@ -16,20 +16,20 @@
 """Entropic Hetero-Associative Memory Experiments
 
 Usage:
-  eam -h | --help
-  eam (-n <dataset> | -f <dataset> | -d <dataset> | -s <dataset> | -c <dataset> | -e | -r | -p <kind> | -P <kind> | -q | -u)
-    [--relsmean=MEAN] [--relsstdv=STDV] [--runpath=PATH] [ -l (en | es) ]
+    eam -h | --help
+    eam (-n [<dataset>] | -f [<dataset>] | -d [<dataset>] | -s [<dataset>] | -c [<dataset>] | -e | -r | -p <kind> | -P <kind> | -q | -u)
+        [--relsmean=MEAN] [--relsstdv=STDV] [--runpath=PATH] [ -l (en | es) ]
 
 Options:
-  -h    Show this screen.
-  -n    Trains the neural network for MNIST (mnist) or Fashion (fashion).
-  -f    Generates Features for MNIST (mnist) or Fashion (fashion).
-  -c    Characterizes features and generate prototypes per class.
-  -d    Calculates distances intra/inter classes of features.
-  -s    Runs separated tests of memories performance for MNIST y Fashion.
-  -e    Evaluates recognition of hetero-associations.
-  -r    Evaluates hetero-recalling using search.
-  -p    Validates hetero-recalling using prototypes.
+    -h    Show this screen.
+
+    -f    Generates features for one dataset view or for both when dataset is omitted.
+    -c    Characterizes features for one dataset view or for both when dataset is omitted.
+    -d    Calculates feature distances for one dataset view or for both when dataset is omitted.
+    -s    Runs separated tests for one dataset view or for both when dataset is omitted.
+    -e    Evaluates recognition of hetero-associations.
+    -r    Evaluates hetero-recalling using search.
+    -p    Validates hetero-recalling using prototypes.
   -P    Validates hetero-recalling using correct prototype.
   -q    Validates hetero-recalling using cue.
   -u    Generates sequences of memories
@@ -52,9 +52,18 @@ import scipy
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import seaborn
-import tensorflow as tf
-import png
 from docopt import docopt
+
+try:
+    import tensorflow as tf
+except ImportError:
+    tf = None
+
+try:
+    import png
+except ImportError:
+    png = None
+
 import commons
 import qudeq
 import neural_net
@@ -76,14 +85,16 @@ FP = (1, 0)
 TN = (1, 1)
 
 
-def plot_prerec_graph(
-    pre_mean,
-    rec_mean,
+def plot_metric_pair_graph(
+    metric_a_mean,
+    metric_b_mean,
     ent_mean,
-    pre_std,
-    rec_std,
+    metric_a_std,
+    metric_b_std,
     dataset,
     es,
+    metric_a_label,
+    metric_b_label,
     acc_mean=None,
     acc_std=None,
     prefix='',
@@ -91,11 +102,6 @@ def plot_prerec_graph(
     xtitle=None,
     ytitle=None,
 ):
-    """Plots a precision and recall graph.
-
-    It can also include accuracy, and it can be used to to graph any
-    measure in percentages.
-    """
     plt.figure(figsize=(6.4, 4.8))
     full_length = 100.0
     step = 0.1
@@ -103,19 +109,30 @@ def plot_prerec_graph(
         xlabels = commons.memory_sizes
     main_step = full_length / len(xlabels)
     x = np.arange(0, full_length, main_step)
-
-    # One main step less because levels go on sticks, not
-    # on intervals.
     xmax = full_length - main_step + step
-
-    # Gives space to fully show markers in the top.
     ymax = full_length + 2
 
-    # Replace undefined precision with 1.0.
-    pre_mean = np.nan_to_num(pre_mean, copy=False, nan=100.0)
+    metric_a_mean = np.nan_to_num(metric_a_mean, copy=False)
+    metric_b_mean = np.nan_to_num(metric_b_mean, copy=False)
+    metric_a_std = np.nan_to_num(metric_a_std, copy=False)
+    metric_b_std = np.nan_to_num(metric_b_std, copy=False)
 
-    plt.errorbar(x, pre_mean, fmt='r-o', yerr=pre_std, capsize=3, label=_('Precision'))
-    plt.errorbar(x, rec_mean, fmt='b--s', yerr=rec_std, capsize=3, label=_('Recall'))
+    plt.errorbar(
+        x,
+        metric_a_mean,
+        fmt='r-o',
+        yerr=metric_a_std,
+        capsize=3,
+        label=metric_a_label,
+    )
+    plt.errorbar(
+        x,
+        metric_b_mean,
+        fmt='b--s',
+        yerr=metric_b_std,
+        capsize=3,
+        label=metric_b_label,
+    )
     if (acc_mean is not None) and (acc_std is not None):
         plt.errorbar(
             x, acc_mean, fmt='g--d', yerr=acc_std, capsize=3, label=_('Accuracy')
@@ -149,6 +166,46 @@ def plot_prerec_graph(
     graph_filename = commons.picture_filename(fname, es)
     plt.savefig(graph_filename, dpi=600)
     plt.close()
+
+
+def plot_prerec_graph(
+    pre_mean,
+    rec_mean,
+    ent_mean,
+    pre_std,
+    rec_std,
+    dataset,
+    es,
+    acc_mean=None,
+    acc_std=None,
+    prefix='',
+    xlabels=None,
+    xtitle=None,
+    ytitle=None,
+):
+    """Plots a precision and recall graph.
+
+    It can also include accuracy, and it can be used to to graph any
+    measure in percentages.
+    """
+    pre_mean = np.nan_to_num(pre_mean, copy=False, nan=100.0)
+    plot_metric_pair_graph(
+        pre_mean,
+        rec_mean,
+        ent_mean,
+        pre_std,
+        rec_std,
+        dataset,
+        es,
+        _('Precision'),
+        _('Recall'),
+        acc_mean=acc_mean,
+        acc_std=acc_std,
+        prefix=prefix,
+        xlabels=xlabels,
+        xtitle=xtitle,
+        ytitle=ytitle,
+    )
 
 
 def plot_behs_graph(
@@ -284,8 +341,10 @@ def plot_features_graph(domain, means, stdevs, labels, dataset, es):
     plt.close()
 
 
-def plot_confusion_matrix(matrix, tags, dataset, es, prefix='', vmin=0.0, vmax=None):
-    """Plots the confusion matrix of labels vs predictions."""
+def plot_legacy_confusion_matrix(
+    matrix, tags, dataset, es, prefix='', vmin=0.0, vmax=None
+):
+    """Plots a legacy confusion matrix of labels vs predictions."""
     plt.clf()
     plt.figure(figsize=(6.4, 4.8))
     if vmax is None:
@@ -307,10 +366,23 @@ def plot_confusion_matrix(matrix, tags, dataset, es, prefix='', vmin=0.0, vmax=N
     plt.close()
 
 
-def plot_relation(
+def plot_confusion_matrix(matrix, tags, dataset, es, prefix='', vmin=0.0, vmax=None):
+    """Backward-compatible alias for legacy confusion matrices."""
+    plot_legacy_confusion_matrix(
+        matrix,
+        tags,
+        dataset,
+        es,
+        prefix=prefix,
+        vmin=vmin,
+        vmax=vmax,
+    )
+
+
+def plot_relation_heatmap(
     relation, prefix, xlabel='Characteristics', ylabel='Values', es=None, fold=None
 ):
-    """Plots a relation (table) as a heat map."""
+    """Plots a generic relation matrix as a heat map."""
     plt.clf()
     plt.figure(figsize=(6.4, 4.8))
     seaborn.heatmap(np.transpose(relation), annot=False, cmap='coolwarm')
@@ -323,14 +395,71 @@ def plot_relation(
     plt.close()
 
 
+def plot_projection_relation(relation, prefix, es=None, fold=None):
+    """Plots a projection/relation matrix produced during recall."""
+    plot_relation_heatmap(relation, prefix, es=es, fold=fold)
+
+
 def plot_distances(distances, prefix, es=None, fold=None):
     """Plots a matrix of distances between categories (labels) in a dataset."""
-    plot_relation(distances, prefix, xlabel='Label', ylabel='Label', es=es, fold=fold)
+    plot_relation_heatmap(
+        distances,
+        prefix,
+        xlabel='Label',
+        ylabel='Label',
+        es=es,
+        fold=fold,
+    )
+
+
+def plot_relation(
+    relation, prefix, xlabel='Characteristics', ylabel='Values', es=None, fold=None
+):
+    """Backward-compatible alias for relation heat maps."""
+    plot_relation_heatmap(
+        relation,
+        prefix,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        es=es,
+        fold=fold,
+    )
 
 
 def features_distance(f, g):
     """Calculates euclidean distance between two arrays of features."""
     return np.linalg.norm(f - g)
+
+
+def row_cosine(a, b):
+    a_norm = np.linalg.norm(a, axis=1)
+    b_norm = np.linalg.norm(b, axis=1)
+    denom = np.where((a_norm * b_norm) == 0.0, 1.0, a_norm * b_norm)
+    return np.sum(a * b, axis=1) / denom
+
+
+def cosine_to_score(cosine):
+    return np.clip((cosine + 1.0) / 2.0, 0.0, 1.0)
+
+
+def add_roundtrip_metrics(metrics, recalled_embeddings, targets, dataset):
+    metrics['mean_cosine_roundtrip'] = np.nan
+    metrics['cosine_roundtrip_score'] = 0.0
+
+    if len(recalled_embeddings) == 0:
+        return
+
+    roundtrip_embeddings = neural_net.roundtrip_embeddings(recalled_embeddings, dataset)
+    valid = np.all(np.isfinite(roundtrip_embeddings), axis=1)
+    valid &= np.all(np.isfinite(targets), axis=1)
+    if np.any(valid):
+        roundtrip_embeddings = roundtrip_embeddings[valid]
+        valid_targets = targets[valid]
+        roundtrip_cosines = row_cosine(roundtrip_embeddings, valid_targets)
+        metrics['mean_cosine_roundtrip'] = float(np.mean(roundtrip_cosines))
+        metrics['cosine_roundtrip_score'] = float(
+            cosine_to_score(metrics['mean_cosine_roundtrip'])
+        )
 
 
 def stats_measures(filling_features, filling_labels, testing_features, testing_labels):
@@ -589,39 +718,57 @@ def load_features_n_labels(fold, es):
     return filling_features, filling_labels, testing_features, testing_labels
 
 
-def recognize_by_memory(eam, tef_rounded, tel, msize, qd, classifier):
-    data = []
-    labels = []
-    confrix = np.zeros((commons.n_labels, commons.n_labels + 1), dtype='int')
-    behaviour = np.zeros(commons.n_behaviours, dtype=np.float64)
-    unknown = 0
-    for features, label in zip(tef_rounded, tel):
+def recognize_by_memory(eam, tef_rounded, testing_features, msize, qd, dataset):
+    recalled_indexes = []
+    recalled_memories = []
+    total = len(testing_features)
+
+    for idx, features in enumerate(tef_rounded):
         memory, recognized, _ = eam.recall(features)
         if recognized:
-            mem = qd.dequantize(memory, msize)
-            data.append(mem)
-            labels.append(label)
-        else:
-            unknown += 1
-            confrix[label, commons.n_labels] += 1
-    if len(data) > 0:
-        data = np.array(data)
-        predictions = np.argmax(classifier.predict(data), axis=1)
-        for correct, prediction in zip(labels, predictions):
-            # For calculation of per memory precision and recall
-            confrix[correct, prediction] += 1
-    behaviour[commons.no_response_idx] = unknown
-    behaviour[commons.correct_response_idx] = np.sum(
-        [confrix[i, i] for i in range(commons.n_labels)]
-    )
+            recalled_indexes.append(idx)
+            recalled_memories.append(memory)
 
-    behaviour[commons.no_correct_response_idx] = (
-        len(tel) - unknown - behaviour[commons.correct_response_idx]
-    )
-    print(f'Unknown elements: {unknown}')
-    print(f'Confusion matrix:\n{confrix}')
-    print(f'Behaviour: {behaviour}')
-    return confrix, behaviour
+    recognized = len(recalled_indexes)
+    metrics = {
+        'recognized': recognized,
+        'unknown': total - recognized,
+        'recognition_rate': 0.0 if total == 0 else recognized / float(total),
+        'mean_cosine': np.nan,
+        'cosine_score': 0.0,
+        'mean_cosine_roundtrip': np.nan,
+        'cosine_roundtrip_score': 0.0,
+        'mean_l2': np.nan,
+    }
+    if recognized > 0:
+        recalled_memories = qd.dequantize(np.array(recalled_memories), msize)
+        targets = testing_features[recalled_indexes]
+        valid = np.all(np.isfinite(recalled_memories), axis=1)
+        valid &= np.all(np.isfinite(targets), axis=1)
+        if np.any(valid):
+            recalled_memories = recalled_memories[valid]
+            targets = targets[valid]
+            cosines = row_cosine(recalled_memories, targets)
+            l2_distances = np.linalg.norm(recalled_memories - targets, axis=1)
+            metrics['mean_cosine'] = float(np.mean(cosines))
+            metrics['cosine_score'] = float(cosine_to_score(metrics['mean_cosine']))
+            metrics['mean_l2'] = float(np.mean(l2_distances))
+            add_roundtrip_metrics(metrics, recalled_memories, targets, dataset)
+
+    print(f'Recognized elements: {recognized}/{total}')
+    print(f'Unknown elements: {metrics["unknown"]}')
+    if np.isnan(metrics['mean_cosine']):
+        print('Mean cosine similarity: undefined')
+        print('Mean round-trip cosine similarity: undefined')
+        print('Mean L2 distance: undefined')
+    else:
+        print(f'Mean cosine similarity: {metrics["mean_cosine"]:.6f}')
+        print(
+            'Mean round-trip cosine similarity: '
+            + f'{metrics["mean_cosine_roundtrip"]:.6f}'
+        )
+        print(f'Mean L2 distance: {metrics["mean_l2"]:.6f}')
+    return metrics
 
 
 def recognize_by_hetero_memory(
@@ -629,17 +776,19 @@ def recognize_by_hetero_memory(
     left_eam: AssociativeMemory,
     right_eam: AssociativeMemory,
     tefs,
-    tels,
 ):
     confrix = np.zeros((2, 2), dtype=int)
     weights = {'TP': [], 'FN': [], 'FP': [], 'TN': []}
     print('Recognizing by hetero memory')
     counter = 0
-    for left_feat, left_lab, right_feat, right_lab in zip(
-        tefs[commons.left_dataset],
-        tels[commons.left_dataset],
-        tefs[commons.right_dataset],
-        tels[commons.right_dataset],
+    left_features = tefs[commons.left_dataset]
+    right_features = tefs[commons.right_dataset]
+    total = min(len(left_features), len(right_features))
+    negative_right = None if total < 2 else np.roll(right_features[:total], 1, axis=0)
+
+    for left_feat, right_feat in zip(
+        left_features[:total],
+        right_features[:total],
     ):
         _, left_weights = left_eam.recog_weights(left_feat)
         _, right_weights = right_eam.recog_weights(right_feat)
@@ -647,25 +796,130 @@ def recognize_by_hetero_memory(
             left_feat, right_feat, left_weights, right_weights
         )
         if recognized:
-            if left_lab == right_lab:
-                confrix[TP] += 1
-                weights['TP'].append(weight)
-            else:
+            confrix[TP] += 1
+            weights['TP'].append(weight)
+        else:
+            confrix[FN] += 1
+            weights['FN'].append(weight)
+        counter += 1
+        commons.print_counter(counter, 10000, 1000, symbol='*')
+
+    if negative_right is not None:
+        for left_feat, right_feat in zip(left_features[:total], negative_right):
+            _, left_weights = left_eam.recog_weights(left_feat)
+            _, right_weights = right_eam.recog_weights(right_feat)
+            recognized, weight = hetero_eam.recognize(
+                left_feat, right_feat, left_weights, right_weights
+            )
+            if recognized:
                 confrix[FP] += 1
                 weights['FP'].append(weight)
-        else:
-            if left_lab == right_lab:
-                confrix[FN] += 1
-                weights['FN'].append(weight)
             else:
                 confrix[TN] += 1
                 weights['TN'].append(weight)
-        counter += 1
-        commons.print_counter(counter, 10000, 1000, symbol='*')
+            counter += 1
+            commons.print_counter(counter, 10000, 1000, symbol='*')
     print(' end')
     show_weights_stats(weights)
     print(f'Confusion matrix:\n{confrix}')
     return confrix
+
+
+def recall_by_hetero_memory_embeddings(
+    remembered_dataset,
+    recall,
+    a_features,
+    b_features,
+    raw_b_features,
+    b_labels,
+    msize,
+    recall_method,
+    mfill,
+    qd,
+):
+    gc.collect()
+    indexes = []
+    memories = []
+    pair_ids = []
+    stats = []
+    print('Remembering ', end='')
+    counter = 0
+    counter_name = commons.set_counter()
+    for idx, (a_feats, b_feats, pair_id) in enumerate(zip(a_features, b_features, b_labels)):
+        memory, recognized, _, relation, s = (
+            recall(a_feats, recall_method)
+            if recall_method == commons.recall_with_sampling_n_search
+            else recall(a_feats, recall_method, euc=b_feats, weights=None, label=pair_id)
+        )
+        if recognized:
+            indexes.append(idx)
+            memories.append(memory)
+            pair_ids.append(pair_id)
+            stats.append(s)
+            if random.randrange(100) == 0:
+                prefix = (
+                    'projection-'
+                    + remembered_dataset
+                    + '-fill_'
+                    + str(int(mfill)).zfill(3)
+                    + '-idx_'
+                    + str(idx).zfill(5)
+                )
+                plot_projection_relation(relation, prefix)
+        counter += 1
+        commons.print_counter(
+            counter,
+            1000,
+            100,
+            symbol='+',
+            prefix=f'(Recognized : {len(memories)})',
+            name=counter_name,
+        )
+    print(' done')
+
+    recognized = len(indexes)
+    total = len(b_labels)
+    metrics = {
+        'recognized': recognized,
+        'unknown': total - recognized,
+        'recognition_rate': 0.0 if total == 0 else recognized / float(total),
+        'mean_cosine': np.nan,
+        'cosine_score': 0.0,
+        'mean_cosine_roundtrip': np.nan,
+        'cosine_roundtrip_score': 0.0,
+        'mean_l2': np.nan,
+    }
+    recalled = np.zeros((0, raw_b_features.shape[1]), dtype=np.float32)
+    if recognized > 0:
+        recalled = qd.dequantize(np.array(memories), msize).astype(np.float32)
+        targets = raw_b_features[indexes]
+        valid = np.all(np.isfinite(recalled), axis=1)
+        valid &= np.all(np.isfinite(targets), axis=1)
+        if np.any(valid):
+            recalled = recalled[valid]
+            targets = targets[valid]
+            cosines = row_cosine(recalled, targets)
+            l2_distances = np.linalg.norm(recalled - targets, axis=1)
+            metrics['mean_cosine'] = float(np.mean(cosines))
+            metrics['cosine_score'] = float(cosine_to_score(metrics['mean_cosine']))
+            metrics['mean_l2'] = float(np.mean(l2_distances))
+            add_roundtrip_metrics(metrics, recalled, targets, remembered_dataset)
+
+    print(f'Recognized elements: {recognized}/{total}')
+    if np.isnan(metrics['mean_cosine']):
+        print('Mean cosine similarity: undefined')
+        print('Mean round-trip cosine similarity: undefined')
+        print('Mean L2 distance: undefined')
+    else:
+        print(f'Mean cosine similarity: {metrics["mean_cosine"]:.6f}')
+        print(
+            'Mean round-trip cosine similarity: '
+            + f'{metrics["mean_cosine_roundtrip"]:.6f}'
+        )
+        print(f'Mean L2 distance: {metrics["mean_l2"]:.6f}')
+
+    metadata = np.array([indexes, pair_ids], dtype=int).transpose() if recognized > 0 else np.zeros((0, 2), dtype=int)
+    return metrics, recalled, metadata
 
 
 def recall_by_hetero_memory(
@@ -721,7 +975,7 @@ def recall_by_hetero_memory(
                     + '-lbl_'
                     + str(label).zfill(3)
                 )
-                plot_relation(relation, prefix)
+                plot_projection_relation(relation, prefix)
         else:
             unknown += 1
             confrix[label, commons.n_labels] += 1
@@ -975,13 +1229,10 @@ def optimum_indexes(precisions, recalls):
 def get_ams_results(
     midx,
     msize,
+    dataset,
     domain,
     filling_features,
     testing_features,
-    filling_labels,
-    testing_labels,
-    classifier,
-    es,
 ):
     # Round the values
     qd = qudeq.QuDeq(filling_features, percentiles=commons.use_percentiles)
@@ -997,16 +1248,8 @@ def get_ams_results(
     for features in trf_rounded:
         eam.register(features)
 
-    # Recognize test data.
-    confrix, behaviour = recognize_by_memory(
-        eam, tef_rounded, testing_labels, msize, qd, classifier
-    )
-    responses = len(testing_labels) - behaviour[commons.no_response_idx]
-    precision = behaviour[commons.correct_response_idx] / float(responses)
-    recall = behaviour[commons.correct_response_idx] / float(len(testing_labels))
-    behaviour[commons.precision_idx] = precision
-    behaviour[commons.recall_idx] = recall
-    return midx, eam.entropy, behaviour, confrix
+    metrics = recognize_by_memory(eam, tef_rounded, testing_features, msize, qd, dataset)
+    return midx, eam.entropy, metrics
 
 
 def statistics(dataset, es):
@@ -1055,19 +1298,16 @@ def distances(dataset, es):
 def test_memory_sizes(dataset, es):
     domain = commons.domain(dataset)
     all_entropies = []
-    precision = []
-    recall = []
-    all_confrixes = []
-    no_response = []
-    no_correct_response = []
-    correct_response = []
+    recognition = []
+    cosine = []
+    cosine_score = []
+    cosine_roundtrip = []
+    cosine_roundtrip_score = []
+    l2_distances = []
 
     print(f'Testing the memory of {dataset}')
-    model_prefix = commons.model_name(dataset, es)
     for fold in range(commons.n_folds):
         gc.collect()
-        filename = commons.classifier_filename(model_prefix, es, fold)
-        classifier = tf.keras.models.load_model(filename)
         print(f'Fold: {fold}')
         suffix = commons.filling_suffix
         filling_features_filename = commons.features_name(dataset, es) + suffix
@@ -1090,95 +1330,97 @@ def test_memory_sizes(dataset, es):
         )
 
         filling_features = np.load(filling_features_filename)
-        filling_labels = np.load(filling_labels_filename)
         testing_features = np.load(testing_features_filename)
-        testing_labels = np.load(testing_labels_filename)
-        validating_network_data(
-            filling_features, filling_labels, classifier, dataset, 'filling data'
-        )
-        validating_network_data(
-            testing_features, testing_labels, classifier, dataset, 'testing data'
-        )
-        behaviours = np.zeros((len(commons.memory_sizes), commons.n_behaviours))
         measures = []
-        confrixes = []
         entropies = []
+        fold_recognition = []
+        fold_cosine = []
+        fold_cosine_score = []
+        fold_cosine_roundtrip = []
+        fold_cosine_roundtrip_score = []
+        fold_l2 = []
         for midx, msize in enumerate(commons.memory_sizes):
             print(f'Memory size: {msize}')
             results = get_ams_results(
                 midx,
                 msize,
+                dataset,
                 domain,
                 filling_features,
                 testing_features,
-                filling_labels,
-                testing_labels,
-                classifier,
-                es,
             )
             measures.append(results)
-        for midx, entropy, behaviour, confrix in measures:
+        for memory_index, entropy, metrics in measures:
             entropies.append(entropy)
-            behaviours[midx, :] = behaviour
-            confrixes.append(confrix)
+            fold_recognition.append(metrics['recognition_rate'] * 100.0)
+            fold_cosine.append(metrics['mean_cosine'])
+            fold_cosine_score.append(metrics['cosine_score'] * 100.0)
+            fold_cosine_roundtrip.append(metrics['mean_cosine_roundtrip'])
+            fold_cosine_roundtrip_score.append(
+                metrics['cosine_roundtrip_score'] * 100.0
+            )
+            fold_l2.append(metrics['mean_l2'])
 
-        ###################################################################3##
-        # Measures by memory size
-
-        # Average entropy among al digits.
         all_entropies.append(entropies)
-
-        # Average precision and recall as percentage
-        precision.append(behaviours[:, commons.precision_idx] * 100)
-        recall.append(behaviours[:, commons.recall_idx] * 100)
-
-        all_confrixes.append(np.array(confrixes))
-        no_response.append(behaviours[:, commons.no_response_idx])
-        no_correct_response.append(behaviours[:, commons.no_correct_response_idx])
-        correct_response.append(behaviours[:, commons.correct_response_idx])
+        recognition.append(fold_recognition)
+        cosine.append(fold_cosine)
+        cosine_score.append(fold_cosine_score)
+        cosine_roundtrip.append(fold_cosine_roundtrip)
+        cosine_roundtrip_score.append(fold_cosine_roundtrip_score)
+        l2_distances.append(fold_l2)
 
     # Every row is training fold, and every column is a memory size.
     all_entropies = np.array(all_entropies)
-    precision = np.array(precision)
-    recall = np.array(recall)
-    all_confrixes = np.array(all_confrixes)
+    recognition = np.array(recognition)
+    cosine = np.array(cosine)
+    cosine_score = np.array(cosine_score)
+    cosine_roundtrip = np.array(cosine_roundtrip)
+    cosine_roundtrip_score = np.array(cosine_roundtrip_score)
+    l2_distances = np.array(l2_distances)
 
     average_entropy = np.mean(all_entropies, axis=0)
-    average_precision = np.mean(precision, axis=0)
-    stdev_precision = np.std(precision, axis=0)
-    average_recall = np.mean(recall, axis=0)
-    stdev_recall = np.std(recall, axis=0)
-    average_confrixes = np.mean(all_confrixes, axis=0)
-
-    no_response = np.array(no_response)
-    no_correct_response = np.array(no_correct_response)
-    correct_response = np.array(correct_response)
-    mean_no_response = np.mean(no_response, axis=0)
-    stdv_no_response = np.std(no_response, axis=0)
-    mean_no_correct_response = np.mean(no_correct_response, axis=0)
-    stdv_no_correct_response = np.std(no_correct_response, axis=0)
-    mean_correct_response = np.mean(correct_response, axis=0)
-    stdv_correct_response = np.std(correct_response, axis=0)
-    best_memory_idx = optimum_indexes(average_precision, average_recall)
+    average_recognition = np.mean(recognition, axis=0)
+    stdev_recognition = np.std(recognition, axis=0)
+    average_cosine = np.nanmean(cosine, axis=0)
+    stdev_cosine = np.nanstd(cosine, axis=0)
+    average_cosine_score = np.mean(cosine_score, axis=0)
+    stdev_cosine_score = np.std(cosine_score, axis=0)
+    average_cosine_roundtrip = np.nanmean(cosine_roundtrip, axis=0)
+    stdev_cosine_roundtrip = np.nanstd(cosine_roundtrip, axis=0)
+    average_cosine_roundtrip_score = np.mean(cosine_roundtrip_score, axis=0)
+    stdev_cosine_roundtrip_score = np.std(cosine_roundtrip_score, axis=0)
+    average_l2 = np.nanmean(l2_distances, axis=0)
+    stdev_l2 = np.nanstd(l2_distances, axis=0)
+    best_memory_idx = optimum_indexes(average_recognition / 100.0, average_cosine_score / 100.0)
     best_memory_sizes = [commons.memory_sizes[i] for i in best_memory_idx]
-    mean_behaviours = [
-        mean_no_response,
-        mean_no_correct_response,
-        mean_correct_response,
-    ]
-    stdv_behaviours = [
-        stdv_no_response,
-        stdv_no_correct_response,
-        stdv_correct_response,
-    ]
 
     np.savetxt(
-        commons.csv_filename('memory_precision-' + dataset, es),
-        precision,
+        commons.csv_filename('memory_recognition-' + dataset, es),
+        recognition,
         delimiter=',',
     )
     np.savetxt(
-        commons.csv_filename('memory_recall-' + dataset, es), recall, delimiter=','
+        commons.csv_filename('memory_cosine-' + dataset, es), cosine, delimiter=','
+    )
+    np.savetxt(
+        commons.csv_filename('memory_cosine_score-' + dataset, es),
+        cosine_score,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('memory_cosine_roundtrip-' + dataset, es),
+        cosine_roundtrip,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('memory_cosine_roundtrip_score-' + dataset, es),
+        cosine_roundtrip_score,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('memory_l2-' + dataset, es),
+        l2_distances,
+        delimiter=',',
     )
     np.savetxt(
         commons.csv_filename('memory_entropy-' + dataset, es),
@@ -1186,51 +1428,73 @@ def test_memory_sizes(dataset, es):
         delimiter=',',
     )
     np.savetxt(
-        commons.csv_filename('mean_behaviours-' + dataset, es),
-        mean_behaviours,
+        commons.csv_filename('memory_mean_recognition-' + dataset, es),
+        average_recognition,
         delimiter=',',
     )
     np.savetxt(
-        commons.csv_filename('stdv_behaviours-' + dataset, es),
-        stdv_behaviours,
+        commons.csv_filename('memory_mean_cosine-' + dataset, es),
+        average_cosine,
         delimiter=',',
     )
-    np.save(commons.data_filename('memory_confrixes-' + dataset, es), average_confrixes)
-    np.save(commons.data_filename('behaviours-' + dataset, es), behaviours)
-    plot_prerec_graph(
-        average_precision,
-        average_recall,
+    np.savetxt(
+        commons.csv_filename('memory_mean_cosine_score-' + dataset, es),
+        average_cosine_score,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('memory_mean_cosine_roundtrip-' + dataset, es),
+        average_cosine_roundtrip,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('memory_mean_cosine_roundtrip_score-' + dataset, es),
+        average_cosine_roundtrip_score,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('memory_mean_l2-' + dataset, es),
+        average_l2,
+        delimiter=',',
+    )
+    plot_metric_pair_graph(
+        average_recognition,
+        average_cosine_score,
         average_entropy,
-        stdev_precision,
-        stdev_recall,
+        stdev_recognition,
+        stdev_cosine_score,
         dataset,
         es,
+        _('Recognition'),
+        _('Cosine score'),
         prefix='homo_msizes-',
     )
-    plot_behs_graph(
-        mean_no_response,
-        mean_no_correct_response,
-        mean_correct_response,
+    plot_metric_pair_graph(
+        average_recognition,
+        average_cosine_roundtrip_score,
+        average_entropy,
+        stdev_recognition,
+        stdev_cosine_roundtrip_score,
         dataset,
         es,
-        prefix='homo_msizes-',
+        _('Recognition'),
+        _('Round-trip cosine score'),
+        prefix='homo_msizes-roundtrip-',
     )
+    print(f'Mean cosine similarity by memory size: {average_cosine}')
+    print(f'Mean round-trip cosine similarity by memory size: {average_cosine_roundtrip}')
+    print(f'Mean L2 distance by memory size: {average_l2}')
     print('Memory size evaluation completed!')
     return best_memory_sizes
 
 
-def test_filling_percent(eam, msize, qd, trf, tef, tel, percent, classifier):
+def test_filling_percent(eam, msize, qd, trf, tef, raw_tef, percent, dataset):
     # Registrate filling data.
     for features in trf:
         eam.register(features)
     print(f'Filling of memories done at {percent}%')
-    _, behaviour = recognize_by_memory(eam, tef, tel, msize, qd, classifier)
-    responses = len(tel) - behaviour[commons.no_response_idx]
-    precision = behaviour[commons.correct_response_idx] / float(responses)
-    recall = behaviour[commons.correct_response_idx] / float(len(tel))
-    behaviour[commons.precision_idx] = precision
-    behaviour[commons.recall_idx] = recall
-    return behaviour, eam.entropy
+    metrics = recognize_by_memory(eam, tef, raw_tef, msize, qd, dataset)
+    return metrics, eam.entropy
 
 
 def test_hetero_filling_percent(
@@ -1239,7 +1503,6 @@ def test_hetero_filling_percent(
     right_eam: AssociativeMemory,
     trfs,
     tefs,
-    tels,
     percent,
 ):
     # Register filling data.
@@ -1254,8 +1517,89 @@ def test_hetero_filling_percent(
     print(' end')
     print(f'Filling of memories done at {percent}%')
     print(f'Memory full at {100*hetero_eam.fullness}%')
-    confrix = recognize_by_hetero_memory(hetero_eam, left_eam, right_eam, tefs, tels)
+    confrix = recognize_by_hetero_memory(hetero_eam, left_eam, right_eam, tefs)
     return confrix, hetero_eam.entropy
+
+
+def hetero_recall_by_cue_percent(
+    eam: HeteroAssociativeMemory,
+    filling_features,
+    testing_features,
+    raw_testing_features,
+    testing_labels,
+    qudeqs,
+    percent,
+    es,
+    fold,
+):
+    left_ds = commons.left_dataset
+    right_ds = commons.right_dataset
+    rows = commons.codomains()
+    print('Filling hetero memory')
+    counter = 0
+    for left_feat, right_feat in zip(
+        filling_features[left_ds], filling_features[right_ds]
+    ):
+        eam.register(left_feat, right_feat)
+        counter += 1
+        commons.print_counter(counter, 1000, 100)
+    print(' end')
+    print(f'Filling of memories done at {percent}%')
+    print(f'Memory full at {100*eam.fullness}%')
+
+    qd = qudeqs[right_ds]
+    left_metrics, left_memories, left_metadata = recall_by_hetero_memory_embeddings(
+        right_ds,
+        eam.recall_from_left,
+        testing_features[left_ds],
+        testing_features[right_ds],
+        raw_testing_features[right_ds],
+        testing_labels[right_ds],
+        rows[right_ds],
+        commons.recall_with_cue,
+        percent,
+        qd,
+    )
+    name = (
+        commons.memories_name(left_ds, es)
+        + commons.recall_suffix(commons.recall_with_cue, None)
+        + commons.int_suffix(percent, 'fll')
+    )
+    np.save(commons.data_filename(name, es, fold), left_memories)
+    name = (
+        commons.recall_labels_name(left_ds, es)
+        + commons.recall_suffix(commons.recall_with_cue, None)
+        + commons.int_suffix(percent, 'fll')
+    )
+    np.save(commons.data_filename(name, es, fold), left_metadata)
+
+    qd = qudeqs[left_ds]
+    right_metrics, right_memories, right_metadata = recall_by_hetero_memory_embeddings(
+        left_ds,
+        eam.recall_from_right,
+        testing_features[right_ds],
+        testing_features[left_ds],
+        raw_testing_features[left_ds],
+        testing_labels[left_ds],
+        rows[left_ds],
+        commons.recall_with_cue,
+        percent,
+        qd,
+    )
+    name = (
+        commons.memories_name(right_ds, es)
+        + commons.recall_suffix(commons.recall_with_cue, None)
+        + commons.int_suffix(percent, 'fll')
+    )
+    np.save(commons.data_filename(name, es, fold), right_memories)
+    name = (
+        commons.recall_labels_name(right_ds, es)
+        + commons.recall_suffix(commons.recall_with_cue, None)
+        + commons.int_suffix(percent, 'fll')
+    )
+    np.save(commons.data_filename(name, es, fold), right_metadata)
+
+    return [left_metrics, right_metrics], eam.entropy
 
 
 def hetero_remember_percent(
@@ -1308,9 +1652,6 @@ def test_filling_per_fold(mem_size, domain, dataset, es, fold):
     # Create the required associative memories using default parameters.
     params = commons.ExperimentSettings()
     eam = AssociativeMemory(domain, mem_size, params)
-    model_prefix = commons.model_name(dataset, es)
-    filename = commons.classifier_filename(model_prefix, es, fold)
-    classifier = tf.keras.models.load_model(filename)
 
     suffix = commons.filling_suffix
     filling_features_filename = commons.features_name(dataset, es) + suffix
@@ -1328,50 +1669,65 @@ def test_filling_per_fold(mem_size, domain, dataset, es, fold):
     testing_labels_filename = commons.labels_name(dataset, es) + suffix
     testing_labels_filename = commons.data_filename(testing_labels_filename, es, fold)
 
-    filling_features = np.load(filling_features_filename)
-    filling_labels = np.load(filling_labels_filename)
-    testing_features = np.load(testing_features_filename)
-    testing_labels = np.load(testing_labels_filename)
+    raw_filling_features = np.load(filling_features_filename)
+    raw_testing_features = np.load(testing_features_filename)
 
-    qd = qudeq.QuDeq(filling_features, percentiles=commons.use_percentiles)
-    filling_features = qd.quantize(filling_features, mem_size)
-    testing_features = qd.quantize(testing_features, mem_size)
+    qd = qudeq.QuDeq(raw_filling_features, percentiles=commons.use_percentiles)
+    filling_features = qd.quantize(raw_filling_features, mem_size)
+    testing_features = qd.quantize(raw_testing_features, mem_size)
 
-    total = len(filling_labels)
+    total = len(raw_filling_features)
     percents = np.array(commons.memory_fills)
     steps = np.round(total * percents / 100.0).astype(int)
 
     fold_entropies = []
-    fold_precision = []
-    fold_recall = []
+    fold_recognition = []
+    fold_cosine = []
+    fold_cosine_score = []
+    fold_cosine_roundtrip = []
+    fold_cosine_roundtrip_score = []
+    fold_l2 = []
 
     start = 0
     for percent, end in zip(percents, steps):
         features = filling_features[start:end]
         print(f'Filling from {start} to {end}.')
-        behaviour, entropy = test_filling_percent(
+        metrics, entropy = test_filling_percent(
             eam,
             mem_size,
             qd,
             features,
             testing_features,
-            testing_labels,
+            raw_testing_features,
             percent,
-            classifier,
+            dataset,
         )
-        # A list of tuples (position, label, features)
-        # fold_recalls += recalls
-        # An array with average entropy per step.
         fold_entropies.append(entropy)
-        # Arrays with precision, and recall.
-        fold_precision.append(behaviour[commons.precision_idx])
-        fold_recall.append(behaviour[commons.recall_idx])
+        fold_recognition.append(metrics['recognition_rate'])
+        fold_cosine.append(metrics['mean_cosine'])
+        fold_cosine_score.append(metrics['cosine_score'])
+        fold_cosine_roundtrip.append(metrics['mean_cosine_roundtrip'])
+        fold_cosine_roundtrip_score.append(metrics['cosine_roundtrip_score'])
+        fold_l2.append(metrics['mean_l2'])
         start = end
     fold_entropies = np.array(fold_entropies)
-    fold_precision = np.array(fold_precision)
-    fold_recall = np.array(fold_recall)
+    fold_recognition = np.array(fold_recognition)
+    fold_cosine = np.array(fold_cosine)
+    fold_cosine_score = np.array(fold_cosine_score)
+    fold_cosine_roundtrip = np.array(fold_cosine_roundtrip)
+    fold_cosine_roundtrip_score = np.array(fold_cosine_roundtrip_score)
+    fold_l2 = np.array(fold_l2)
     print(f'Filling test completed for fold {fold}')
-    return fold, fold_entropies, fold_precision, fold_recall
+    return (
+        fold,
+        fold_entropies,
+        fold_recognition,
+        fold_cosine,
+        fold_cosine_score,
+        fold_cosine_roundtrip,
+        fold_cosine_roundtrip_score,
+        fold_l2,
+    )
 
 
 def test_hetero_filling_per_fold(es, fold):
@@ -1387,41 +1743,23 @@ def test_hetero_filling_per_fold(es, fold):
         domains[left_ds], domains[right_ds], rows[left_ds], rows[right_ds], es, fold
     )
     filling_features = {}
-    filling_labels = {}
     testing_features = {}
-    testing_labels = {}
     for dataset in commons.datasets:
         suffix = commons.filling_suffix
         filling_features_filename = commons.features_name(dataset, es) + suffix
         filling_features_filename = commons.data_filename(
             filling_features_filename, es, fold
         )
-        filling_labels_filename = commons.labels_name(dataset, es) + suffix
-        filling_labels_filename = commons.data_filename(
-            filling_labels_filename, es, fold
-        )
-
         suffix = commons.testing_suffix
         testing_features_filename = commons.features_name(dataset, es) + suffix
         testing_features_filename = commons.data_filename(
             testing_features_filename, es, fold
         )
-        testing_labels_filename = commons.labels_name(dataset, es) + suffix
-        testing_labels_filename = commons.data_filename(
-            testing_labels_filename, es, fold
-        )
-
-        filling_labels[dataset] = np.load(filling_labels_filename)
-        testing_labels[dataset] = np.load(testing_labels_filename)
         f_features = np.load(filling_features_filename)
         t_features = np.load(testing_features_filename)
         qd = qudeq.QuDeq(f_features, percentiles=commons.use_percentiles)
         filling_features[dataset] = qd.quantize(f_features, rows[dataset])
         testing_features[dataset] = qd.quantize(t_features, rows[dataset])
-    match_labels(filling_features, filling_labels)
-    describe(filling_features, filling_labels)
-    match_labels(testing_features, testing_labels, half=True)
-    describe(testing_features, testing_labels)
     for f in filling_features[left_ds]:
         left_eam.register(f)
     for f in filling_features[right_ds]:
@@ -1448,7 +1786,6 @@ def test_hetero_filling_per_fold(es, fold):
             right_eam,
             features,
             testing_features,
-            testing_labels,
             percent,
         )
         # An array with average entropy per step.
@@ -1465,6 +1802,109 @@ def test_hetero_filling_per_fold(es, fold):
     fold_accuracy = np.array(fold_accuracy)
     print(f'Filling test of hetero-associative memory completed for fold {fold}')
     return fold, fold_entropies, fold_precision, fold_recall, fold_accuracy
+
+
+def hetero_recall_by_cue_per_fold(es, fold):
+    domains = commons.domains()
+    rows = commons.codomains()
+    left_ds = commons.left_dataset
+    right_ds = commons.right_dataset
+    params = commons.ExperimentSettings()
+    eam = HeteroAssociativeMemory(
+        domains[left_ds],
+        domains[right_ds],
+        rows[left_ds],
+        rows[right_ds],
+        es,
+        fold,
+    )
+    filling_features = {}
+    testing_features = {}
+    raw_testing_features = {}
+    testing_labels = {}
+    qudeqs = {}
+    for dataset in commons.datasets:
+        suffix = commons.filling_suffix
+        filling_features_filename = commons.features_name(dataset, es) + suffix
+        filling_features_filename = commons.data_filename(
+            filling_features_filename, es, fold
+        )
+        suffix = commons.testing_suffix
+        testing_features_filename = commons.features_name(dataset, es) + suffix
+        testing_features_filename = commons.data_filename(
+            testing_features_filename, es, fold
+        )
+        testing_labels_filename = commons.labels_name(dataset, es) + suffix
+        testing_labels_filename = commons.data_filename(
+            testing_labels_filename, es, fold
+        )
+
+        f_features = np.load(filling_features_filename)
+        t_features = np.load(testing_features_filename)
+        testing_labels[dataset] = np.load(testing_labels_filename)
+        qd = qudeq.QuDeq(f_features, percentiles=commons.use_percentiles)
+        filling_features[dataset] = qd.quantize(f_features, rows[dataset])
+        testing_features[dataset] = qd.quantize(t_features, rows[dataset])
+        raw_testing_features[dataset] = t_features
+        qudeqs[dataset] = qd
+
+    total = min(len(filling_features[left_ds]), len(filling_features[right_ds]))
+    total_test = min(len(testing_features[left_ds]), len(testing_features[right_ds]))
+    top = int(commons.exploration_ratio * total_test)
+    for dataset in commons.datasets:
+        testing_features[dataset] = testing_features[dataset][:top]
+        raw_testing_features[dataset] = raw_testing_features[dataset][:top]
+        testing_labels[dataset] = testing_labels[dataset][:top]
+    print(f'Filling hetero-associative memory with a total of {total} pairs.')
+    percents = np.array(commons.memory_fills)
+    steps = np.round(total * percents / 100.0).astype(int)
+
+    fold_entropies = []
+    fold_recognition = []
+    fold_cosine = []
+    fold_cosine_score = []
+    fold_cosine_roundtrip = []
+    fold_cosine_roundtrip_score = []
+    fold_l2 = []
+    start = 0
+    for percent, end in zip(percents, steps):
+        features = {
+            left_ds: filling_features[left_ds][start:end],
+            right_ds: filling_features[right_ds][start:end],
+        }
+        print(f'Filling from {start} to {end}.')
+        metrics_by_ds, entropy = hetero_recall_by_cue_percent(
+            eam,
+            features,
+            testing_features,
+            raw_testing_features,
+            testing_labels,
+            qudeqs,
+            percent,
+            es,
+            fold,
+        )
+        fold_entropies.append(entropy)
+        fold_recognition.append([m['recognition_rate'] for m in metrics_by_ds])
+        fold_cosine.append([m['mean_cosine'] for m in metrics_by_ds])
+        fold_cosine_score.append([m['cosine_score'] for m in metrics_by_ds])
+        fold_cosine_roundtrip.append([m['mean_cosine_roundtrip'] for m in metrics_by_ds])
+        fold_cosine_roundtrip_score.append(
+            [m['cosine_roundtrip_score'] for m in metrics_by_ds]
+        )
+        fold_l2.append([m['mean_l2'] for m in metrics_by_ds])
+        start = end
+
+    return (
+        fold,
+        np.array(fold_entropies),
+        np.transpose(np.array(fold_recognition, dtype=float)),
+        np.transpose(np.array(fold_cosine, dtype=float)),
+        np.transpose(np.array(fold_cosine_score, dtype=float)),
+        np.transpose(np.array(fold_cosine_roundtrip, dtype=float)),
+        np.transpose(np.array(fold_cosine_roundtrip_score, dtype=float)),
+        np.transpose(np.array(fold_l2, dtype=float)),
+    )
 
 
 def hetero_remember_per_fold(recall_method, proto_kind_suffix, es, fold):
@@ -1651,50 +2091,118 @@ def hetero_remember_per_fold(recall_method, proto_kind_suffix, es, fold):
 
 
 def test_memory_fills(mem_sizes, dataset, es):
-    domain = commons.domain(dataset)
     memory_fills = commons.memory_fills
     testing_folds = commons.n_folds
     best_filling_percents = []
     for mem_size in mem_sizes:
-        # All entropies, precision, and recall, per size, fold, and fill.
+        domain = commons.domain(dataset)
         total_entropies = np.zeros((testing_folds, len(memory_fills)))
-        total_precisions = np.zeros((testing_folds, len(memory_fills)))
-        total_recalls = np.zeros((testing_folds, len(memory_fills)))
+        total_recognitions = np.zeros((testing_folds, len(memory_fills)))
+        total_cosines = np.full((testing_folds, len(memory_fills)), np.nan)
+        total_cosine_scores = np.zeros((testing_folds, len(memory_fills)))
+        total_cosine_roundtrips = np.full((testing_folds, len(memory_fills)), np.nan)
+        total_cosine_roundtrip_scores = np.zeros((testing_folds, len(memory_fills)))
+        total_l2 = np.full((testing_folds, len(memory_fills)), np.nan)
         list_results = []
 
         for fold in range(testing_folds):
             results = test_filling_per_fold(mem_size, domain, dataset, es, fold)
             list_results.append(results)
-        for fold, entropies, precisions, recalls in list_results:
-            total_precisions[fold] = precisions
-            total_recalls[fold] = recalls
+        for (
+            fold,
+            entropies,
+            recognitions,
+            cosines,
+            cosine_scores,
+            cosine_roundtrips,
+            cosine_roundtrip_scores,
+            l2_distances,
+        ) in list_results:
+            total_recognitions[fold] = recognitions
+            total_cosines[fold] = cosines
+            total_cosine_scores[fold] = cosine_scores
+            total_cosine_roundtrips[fold] = cosine_roundtrips
+            total_cosine_roundtrip_scores[fold] = cosine_roundtrip_scores
+            total_l2[fold] = l2_distances
             total_entropies[fold] = entropies
 
         main_avrge_entropies = np.mean(total_entropies, axis=0)
         main_stdev_entropies = np.std(total_entropies, axis=0)
-        main_avrge_precisions = np.mean(total_precisions, axis=0)
-        main_stdev_precisions = np.std(total_precisions, axis=0)
-        main_avrge_recalls = np.mean(total_recalls, axis=0)
-        main_stdev_recalls = np.std(total_recalls, axis=0)
+        main_avrge_recognitions = np.mean(total_recognitions, axis=0)
+        main_stdev_recognitions = np.std(total_recognitions, axis=0)
+        main_avrge_cosines = np.nanmean(total_cosines, axis=0)
+        main_stdev_cosines = np.nanstd(total_cosines, axis=0)
+        main_avrge_cosine_scores = np.mean(total_cosine_scores, axis=0)
+        main_stdev_cosine_scores = np.std(total_cosine_scores, axis=0)
+        main_avrge_cosine_roundtrips = np.nanmean(total_cosine_roundtrips, axis=0)
+        main_stdev_cosine_roundtrips = np.nanstd(total_cosine_roundtrips, axis=0)
+        main_avrge_cosine_roundtrip_scores = np.mean(
+            total_cosine_roundtrip_scores, axis=0
+        )
+        main_stdev_cosine_roundtrip_scores = np.std(
+            total_cosine_roundtrip_scores, axis=0
+        )
+        main_avrge_l2 = np.nanmean(total_l2, axis=0)
+        main_stdev_l2 = np.nanstd(total_l2, axis=0)
 
         np.savetxt(
             commons.csv_filename(
-                'main_average_precision-'
+                'main_average_recognition-'
                 + dataset
                 + commons.numeric_suffix('sze', mem_size),
                 es,
             ),
-            main_avrge_precisions,
+            main_avrge_recognitions,
             delimiter=',',
         )
         np.savetxt(
             commons.csv_filename(
-                'main_average_recall-'
+                'main_average_cosine-'
                 + dataset
                 + commons.numeric_suffix('sze', mem_size),
                 es,
             ),
-            main_avrge_recalls,
+            main_avrge_cosines,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_average_cosine_score-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_avrge_cosine_scores,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_average_cosine_roundtrip-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_avrge_cosine_roundtrips,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_average_cosine_roundtrip_score-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_avrge_cosine_roundtrip_scores,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_average_l2-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_avrge_l2,
             delimiter=',',
         )
         np.savetxt(
@@ -1709,22 +2217,62 @@ def test_memory_fills(mem_sizes, dataset, es):
         )
         np.savetxt(
             commons.csv_filename(
-                'main_stdev_precision-'
+                'main_stdev_recognition-'
                 + dataset
                 + commons.numeric_suffix('sze', mem_size),
                 es,
             ),
-            main_stdev_precisions,
+            main_stdev_recognitions,
             delimiter=',',
         )
         np.savetxt(
             commons.csv_filename(
-                'main_stdev_recall-'
+                'main_stdev_cosine-'
                 + dataset
                 + commons.numeric_suffix('sze', mem_size),
                 es,
             ),
-            main_stdev_recalls,
+            main_stdev_cosines,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_stdev_cosine_score-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_stdev_cosine_scores,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_stdev_cosine_roundtrip-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_stdev_cosine_roundtrips,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_stdev_cosine_roundtrip_score-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_stdev_cosine_roundtrip_scores,
+            delimiter=',',
+        )
+        np.savetxt(
+            commons.csv_filename(
+                'main_stdev_l2-'
+                + dataset
+                + commons.numeric_suffix('sze', mem_size),
+                es,
+            ),
+            main_stdev_l2,
             delimiter=',',
         )
         np.savetxt(
@@ -1738,21 +2286,43 @@ def test_memory_fills(mem_sizes, dataset, es):
             delimiter=',',
         )
 
-        plot_prerec_graph(
-            main_avrge_precisions * 100,
-            main_avrge_recalls * 100,
+        plot_metric_pair_graph(
+            main_avrge_recognitions * 100,
+            main_avrge_cosine_scores * 100,
             main_avrge_entropies,
-            main_stdev_precisions * 100,
-            main_stdev_recalls * 100,
+            main_stdev_recognitions * 100,
+            main_stdev_cosine_scores * 100,
             dataset,
             es,
+            _('Recognition'),
+            _('Cosine score'),
             prefix='homo_fills' + commons.numeric_suffix('sze', mem_size) + '-',
             xlabels=commons.memory_fills,
             xtitle=_('Percentage of memory corpus'),
         )
+        plot_metric_pair_graph(
+            main_avrge_recognitions * 100,
+            main_avrge_cosine_roundtrip_scores * 100,
+            main_avrge_entropies,
+            main_stdev_recognitions * 100,
+            main_stdev_cosine_roundtrip_scores * 100,
+            dataset,
+            es,
+            _('Recognition'),
+            _('Round-trip cosine score'),
+            prefix='homo_fills-roundtrip' + commons.numeric_suffix('sze', mem_size) + '-',
+            xlabels=commons.memory_fills,
+            xtitle=_('Percentage of memory corpus'),
+        )
 
-        bf_idx = optimum_indexes(main_avrge_precisions, main_avrge_recalls)
+        bf_idx = optimum_indexes(main_avrge_recognitions, main_avrge_cosine_scores)
         best_filling_percents.append(commons.memory_fills[bf_idx[0]])
+        print(f'Mean cosine similarity by fill for size {mem_size}: {main_avrge_cosines}')
+        print(
+            'Mean round-trip cosine similarity by fill for size '
+            + f'{mem_size}: {main_avrge_cosine_roundtrips}'
+        )
+        print(f'Mean L2 distance by fill for size {mem_size}: {main_avrge_l2}')
         print(f'Testing fillings for memory size {mem_size} done.')
     return best_filling_percents
 
@@ -1869,13 +2439,18 @@ def save_history(history, prefix, es):
         json.dump(stats, outfile)
 
 
-def save_conf_matrix(matrix, dataset, prefix, es, vmax=None):
-    plot_confusion_matrix(
+def save_legacy_conf_matrix(matrix, dataset, prefix, es, vmax=None):
+    plot_legacy_confusion_matrix(
         matrix, range(commons.n_labels), dataset, es, prefix, vmax=vmax
     )
     fname = prefix + commons.matrix_suffix + '-' + dataset
     filename = commons.data_filename(fname)
     np.save(filename, matrix)
+
+
+def save_conf_matrix(matrix, dataset, prefix, es, vmax=None):
+    """Backward-compatible alias for legacy confusion-matrix persistence."""
+    save_legacy_conf_matrix(matrix, dataset, prefix, es, vmax=vmax)
 
 
 def save_learned_params(mem_sizes, fill_percents, dataset, es):
@@ -1885,6 +2460,12 @@ def save_learned_params(mem_sizes, fill_percents, dataset, es):
 
 
 def remember(recall_method, proto_kind_suffix, es):
+    if recall_method == commons.recall_with_cue:
+        return remember_with_cue(es)
+    return remember_with_legacy_metrics(recall_method, proto_kind_suffix, es)
+
+
+def remember_with_legacy_metrics(recall_method, proto_kind_suffix, es):
     memory_fills = commons.memory_fills
     testing_folds = commons.n_folds
     total_entropies = np.zeros((testing_folds, len(memory_fills)))
@@ -1996,13 +2577,169 @@ def remember(recall_method, proto_kind_suffix, es):
             prefix='hetero_remember' + suffix + '-',
         )
         for j, f in enumerate(commons.memory_fills):
-            save_conf_matrix(
+            save_legacy_conf_matrix(
                 main_avrge_confrixes[i, j],
                 dataset,
                 f'hetero_remember{suffix}-fll_{str(f).zfill(3)}',
                 es,
             )
     print('Remembering done!')
+
+
+def remember_with_cue(es):
+    memory_fills = commons.memory_fills
+    testing_folds = commons.n_folds
+    n_sets = len(commons.datasets)
+    total_entropies = np.zeros((testing_folds, len(memory_fills)))
+    total_recognitions = np.zeros((testing_folds, n_sets, len(memory_fills)))
+    total_cosines = np.full((testing_folds, n_sets, len(memory_fills)), np.nan)
+    total_cosine_scores = np.zeros((testing_folds, n_sets, len(memory_fills)))
+    total_cosine_roundtrips = np.full((testing_folds, n_sets, len(memory_fills)), np.nan)
+    total_cosine_roundtrip_scores = np.zeros((testing_folds, n_sets, len(memory_fills)))
+    total_l2 = np.full((testing_folds, n_sets, len(memory_fills)), np.nan)
+
+    for fold in range(testing_folds):
+        (
+            fold,
+            entropies,
+            recognitions,
+            cosines,
+            cosine_scores,
+            cosine_roundtrips,
+            cosine_roundtrip_scores,
+            l2_distances,
+        ) = hetero_recall_by_cue_per_fold(es, fold)
+        total_entropies[fold] = entropies
+        total_recognitions[fold] = recognitions
+        total_cosines[fold] = cosines
+        total_cosine_scores[fold] = cosine_scores
+        total_cosine_roundtrips[fold] = cosine_roundtrips
+        total_cosine_roundtrip_scores[fold] = cosine_roundtrip_scores
+        total_l2[fold] = l2_distances
+
+    main_avrge_entropies = np.mean(total_entropies, axis=0)
+    main_stdev_entropies = np.std(total_entropies, axis=0)
+    main_avrge_recognitions = np.mean(total_recognitions, axis=0)
+    main_stdev_recognitions = np.std(total_recognitions, axis=0)
+    main_avrge_cosines = np.nanmean(total_cosines, axis=0)
+    main_stdev_cosines = np.nanstd(total_cosines, axis=0)
+    main_avrge_cosine_scores = np.mean(total_cosine_scores, axis=0)
+    main_stdev_cosine_scores = np.std(total_cosine_scores, axis=0)
+    main_avrge_cosine_roundtrips = np.nanmean(total_cosine_roundtrips, axis=0)
+    main_stdev_cosine_roundtrips = np.nanstd(total_cosine_roundtrips, axis=0)
+    main_avrge_cosine_roundtrip_scores = np.mean(total_cosine_roundtrip_scores, axis=0)
+    main_stdev_cosine_roundtrip_scores = np.std(total_cosine_roundtrip_scores, axis=0)
+    main_avrge_l2 = np.nanmean(total_l2, axis=0)
+    main_stdev_l2 = np.nanstd(total_l2, axis=0)
+    suffix = commons.recall_suffix(commons.recall_with_cue, None)
+
+    np.savetxt(
+        commons.csv_filename('remember_average_recognition' + suffix, es),
+        main_avrge_recognitions,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_average_cosine' + suffix, es),
+        main_avrge_cosines,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_average_cosine_score' + suffix, es),
+        main_avrge_cosine_scores,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_average_cosine_roundtrip' + suffix, es),
+        main_avrge_cosine_roundtrips,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_average_cosine_roundtrip_score' + suffix, es),
+        main_avrge_cosine_roundtrip_scores,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_average_l2' + suffix, es),
+        main_avrge_l2,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_average_entropy' + suffix, es),
+        main_avrge_entropies,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_recognition' + suffix, es),
+        main_stdev_recognitions,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_cosine' + suffix, es),
+        main_stdev_cosines,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_cosine_score' + suffix, es),
+        main_stdev_cosine_scores,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_cosine_roundtrip' + suffix, es),
+        main_stdev_cosine_roundtrips,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_cosine_roundtrip_score' + suffix, es),
+        main_stdev_cosine_roundtrip_scores,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_l2' + suffix, es),
+        main_stdev_l2,
+        delimiter=',',
+    )
+    np.savetxt(
+        commons.csv_filename('remember_stdev_entropy' + suffix, es),
+        main_stdev_entropies,
+        delimiter=',',
+    )
+
+    for i, dataset in enumerate(commons.datasets):
+        plot_metric_pair_graph(
+            100 * main_avrge_recognitions[i],
+            100 * main_avrge_cosine_scores[i],
+            main_avrge_entropies,
+            100 * main_stdev_recognitions[i],
+            100 * main_stdev_cosine_scores[i],
+            dataset,
+            es,
+            _('Recognition'),
+            _('Cosine score'),
+            prefix='hetero_remember' + suffix + '-',
+            xlabels=commons.memory_fills,
+            xtitle=_('Percentage of memory corpus'),
+        )
+        plot_metric_pair_graph(
+            100 * main_avrge_recognitions[i],
+            100 * main_avrge_cosine_roundtrip_scores[i],
+            main_avrge_entropies,
+            100 * main_stdev_recognitions[i],
+            100 * main_stdev_cosine_roundtrip_scores[i],
+            dataset,
+            es,
+            _('Recognition'),
+            _('Round-trip cosine score'),
+            prefix='hetero_remember-roundtrip' + suffix + '-',
+            xlabels=commons.memory_fills,
+            xtitle=_('Percentage of memory corpus'),
+        )
+        print(f'Mean cosine similarity for {dataset}: {main_avrge_cosines[i]}')
+        print(
+            f'Mean round-trip cosine similarity for {dataset}: '
+            + f'{main_avrge_cosine_roundtrips[i]}'
+        )
+        print(f'Mean L2 distance for {dataset}: {main_avrge_l2[i]}')
+    print('Remembering with cue done!')
 
 
 def store_memory(image, directory, name, idx, correct, prediction, es, fold):
@@ -2303,33 +3040,45 @@ def produce_testing_sequences(
     """
     rows = commons.datasets_to_codomains
     sequences = {}
-    origin = 1
     for orig_ds in commons.datasets:
         sequences[orig_ds] = []
-        dest_ds = commons.alt(orig_ds)
         print(f'Generating sequences starting at {orig_ds}')
         counter = 0
         counter_name = commons.set_counter()
-        for feats, label in zip(features[orig_ds], labels[orig_ds]):
-            i = 1
-            fs = feats
-            sequence = [qds[orig_ds].dequantize(fs, rows[orig_ds])]
-            while i < commons.sequence_length:
-                if (i % 2) == origin:
-                    fs, _, _, _, _ = hetero.recall_from_left(
-                        fs, method=recall_method, label=label
+        for feats, pair_id in zip(features[orig_ds], labels[orig_ds]):
+            current_dataset = orig_ds
+            current_features = feats
+            step_datasets = [current_dataset]
+            sequence = [
+                qds[current_dataset].dequantize(current_features, rows[current_dataset])
+            ]
+            while len(sequence) < commons.sequence_length:
+                if current_dataset == commons.left_dataset:
+                    current_features, recognized, _, _, _ = hetero.recall_from_left(
+                        current_features, method=recall_method, label=pair_id
                     )
-                    sequence.append(qds[dest_ds].dequantize(fs, rows[dest_ds]))
                 else:
-                    fs, _, _, _, _ = hetero.recall_from_right(
-                        fs, method=recall_method, label=label
+                    current_features, recognized, _, _, _ = hetero.recall_from_right(
+                        current_features, method=recall_method, label=pair_id
                     )
-                    sequence.append(qds[orig_ds].dequantize(fs, rows[orig_ds]))
-                i += 1
-            sequences[orig_ds].append(sequence)
+                if not recognized:
+                    break
+                current_dataset = commons.alt(current_dataset)
+                step_datasets.append(current_dataset)
+                sequence.append(
+                    qds[current_dataset].dequantize(
+                        current_features, rows[current_dataset]
+                    )
+                )
+            sequences[orig_ds].append(
+                {
+                    'pair_id': int(pair_id),
+                    'datasets': step_datasets,
+                    'embeddings': np.array(sequence, dtype=np.float32),
+                }
+            )
             commons.print_counter(counter, 10, 1, '+', name=counter_name)
             counter += 1
-        origin = (origin + 1) % 2
     return sequences
 
 
@@ -2338,6 +3087,7 @@ def sequences_of_memories(recall_method, filling_percent, es):
     rows = commons.datasets_to_codomains
     sequences = []
     labels = []
+    targets = []
     for fold in range(commons.n_folds):
         filling_features, filling_labels, testing_features, testing_labels = (
             load_features_n_labels(fold, es)
@@ -2345,11 +3095,14 @@ def sequences_of_memories(recall_method, filling_percent, es):
         testing_features, testing_labels = sample_features_for_sequencing(
             testing_features, testing_labels
         )
+        raw_testing_features = {
+            dataset: np.array(testing_features[dataset], dtype=np.float32, copy=True)
+            for dataset in commons.datasets
+        }
         match_labels(filling_features, filling_labels)
         total = len(filling_labels[commons.left_dataset])
         top = int(total * filling_percent / 100.0)
         qds = {}
-        filling_prototypes = {}
         for dataset in commons.datasets:
             qd = qudeq.QuDeq(
                 filling_features[dataset], percentiles=commons.use_percentiles
@@ -2360,11 +3113,6 @@ def sequences_of_memories(recall_method, filling_percent, es):
             testing_features[dataset] = qd.quantize(
                 testing_features[dataset], rows[dataset]
             )
-            proto_suffix = commons.filling_suffix + commons.proto_suffix
-            proto_filename = commons.features_name(dataset, es) + proto_suffix
-            proto_filename = commons.data_filename(proto_filename, es, fold)
-            prototypes = np.load(proto_filename)
-            filling_prototypes[dataset] = qd.quantize(prototypes, rows[dataset])
             qds[dataset] = qd
         hetero = HeteroAssociativeMemory(
             cols[commons.left_dataset],
@@ -2375,10 +3123,7 @@ def sequences_of_memories(recall_method, filling_percent, es):
             fold,
             qds[commons.left_dataset],
             qds[commons.right_dataset],
-            [
-                filling_prototypes[commons.left_dataset],
-                filling_prototypes[commons.right_dataset],
-            ],
+            None,
         )
         for left_feat, right_feat in zip(
             filling_features[commons.left_dataset],
@@ -2390,69 +3135,179 @@ def sequences_of_memories(recall_method, filling_percent, es):
         )
         sequences.append(seqs)
         labels.append(testing_labels)
-    return sequences, labels
+        targets.append(
+            {
+                dataset: {
+                    int(pair_id): raw_feature
+                    for pair_id, raw_feature in zip(
+                        testing_labels[dataset], raw_testing_features[dataset]
+                    )
+                }
+                for dataset in commons.datasets
+            }
+        )
+    return sequences, labels, targets
 
 
-def save_sequences(sequences, labels, es):
-    # sequences: list(dict(dataset, list(list)))
-    # For each fold, and for each dataset, there is a list of sequences for each label
-    for fold, (seqs, lbls) in enumerate(zip(sequences, labels)):
-        classifiers = {}
-        decoders = {}
-        for dataset in commons.datasets:
-            model_prefix = commons.model_name(dataset, es)
-            filename = commons.classifier_filename(model_prefix, es, fold)
-            classifier = tf.keras.models.load_model(filename)
-            classifiers[dataset] = classifier
-            filename = commons.decoder_filename(model_prefix, es, fold)
-            decoder = tf.keras.models.load_model(filename)
-            decoders[dataset] = decoder
-        for orig_ds in commons.datasets:
-            dest_ds = commons.alt(orig_ds)
-            path = (
-                commons.dreams_path
-                + commons.fold_suffix(fold)
-                + commons.dataset_suffix(orig_ds)
+def decode_sequence_texts(records):
+    decoded_texts = {}
+    pending_embeddings = {dataset: [] for dataset in commons.datasets}
+    pending_positions = {dataset: [] for dataset in commons.datasets}
+
+    for record_idx, record in enumerate(records):
+        decoded_texts[record_idx] = [None] * len(record['datasets'])
+        for step_idx, (dataset, embedding) in enumerate(
+            zip(record['datasets'], record['embeddings'])
+        ):
+            pending_embeddings[dataset].append(embedding)
+            pending_positions[dataset].append((record_idx, step_idx))
+
+    for dataset in commons.datasets:
+        if not pending_embeddings[dataset]:
+            continue
+        embeddings = np.array(pending_embeddings[dataset], dtype=np.float32)
+        texts = neural_net.decode_embeddings(embeddings, dataset)
+        for (record_idx, step_idx), text in zip(pending_positions[dataset], texts):
+            decoded_texts[record_idx][step_idx] = text
+
+    return decoded_texts
+
+
+def evaluate_sequence_records(records, targets_by_dataset):
+    total_steps = 0
+    recognized_steps = 0
+    recalled_by_dataset = {dataset: [] for dataset in commons.datasets}
+    targets_by_recall_dataset = {dataset: [] for dataset in commons.datasets}
+
+    for record in records:
+        datasets = record['datasets']
+        embeddings = record['embeddings']
+        pair_id = record['pair_id']
+        total_steps += max(0, commons.sequence_length - 1)
+        recognized_steps += max(0, len(datasets) - 1)
+        for dataset, embedding in zip(datasets[1:], embeddings[1:]):
+            recalled_by_dataset[dataset].append(embedding)
+            targets_by_recall_dataset[dataset].append(targets_by_dataset[dataset][pair_id])
+
+    metrics = {
+        'recognized': recognized_steps,
+        'unknown': total_steps - recognized_steps,
+        'recognition_rate': 0.0 if total_steps == 0 else recognized_steps / float(total_steps),
+        'mean_cosine': np.nan,
+        'cosine_score': 0.0,
+        'mean_cosine_roundtrip': np.nan,
+        'cosine_roundtrip_score': 0.0,
+        'mean_l2': np.nan,
+    }
+
+    cosines = []
+    roundtrip_cosines = []
+    l2_distances = []
+    for dataset in commons.datasets:
+        if not recalled_by_dataset[dataset]:
+            continue
+        recalled = np.array(recalled_by_dataset[dataset], dtype=np.float32)
+        targets = np.array(targets_by_recall_dataset[dataset], dtype=np.float32)
+        valid = np.all(np.isfinite(recalled), axis=1)
+        valid &= np.all(np.isfinite(targets), axis=1)
+        if not np.any(valid):
+            continue
+        recalled = recalled[valid]
+        targets = targets[valid]
+        cosines.append(row_cosine(recalled, targets))
+        l2_distances.append(np.linalg.norm(recalled - targets, axis=1))
+
+        roundtrip = neural_net.roundtrip_embeddings(recalled, dataset)
+        roundtrip_valid = np.all(np.isfinite(roundtrip), axis=1)
+        roundtrip_valid &= np.all(np.isfinite(targets), axis=1)
+        if np.any(roundtrip_valid):
+            roundtrip_cosines.append(
+                row_cosine(roundtrip[roundtrip_valid], targets[roundtrip_valid])
             )
-            for seq, lbl in zip(seqs[orig_ds], lbls[orig_ds]):
-                i = 1
-                for features in seq:
-                    if i % 2:
-                        label = np.argmax(
-                            classifiers[orig_ds](
-                                np.expand_dims(features, axis=0), training=False
-                            ),
-                            axis=1,
-                        )[0]
-                        image = decoders[orig_ds](
-                            np.expand_dims(features, axis=0), training=False
-                        )
-                    else:
-                        label = np.argmax(
-                            classifiers[dest_ds](
-                                np.expand_dims(features, axis=0), training=False
-                            ),
-                            axis=1,
-                        )[0]
-                        image = decoders[dest_ds](
-                            np.expand_dims(features, axis=0), training=False
-                        )
-                    image = np.squeeze(image.numpy())
-                    store_dream(image, lbl, i, label, path)
-                    i += 1
+
+    if cosines:
+        cosine_values = np.concatenate(cosines)
+        l2_values = np.concatenate(l2_distances)
+        metrics['mean_cosine'] = float(np.mean(cosine_values))
+        metrics['cosine_score'] = float(cosine_to_score(metrics['mean_cosine']))
+        metrics['mean_l2'] = float(np.mean(l2_values))
+    if roundtrip_cosines:
+        roundtrip_values = np.concatenate(roundtrip_cosines)
+        metrics['mean_cosine_roundtrip'] = float(np.mean(roundtrip_values))
+        metrics['cosine_roundtrip_score'] = float(
+            cosine_to_score(metrics['mean_cosine_roundtrip'])
+        )
+
+    return metrics
+
+
+def save_sequences(sequences, labels, targets, es):
+    for fold, (seqs, _, fold_targets) in enumerate(zip(sequences, labels, targets)):
+        for orig_ds in commons.datasets:
+            records = seqs[orig_ds]
+            embeddings = np.array(
+                [record['embeddings'] for record in records], dtype=object
+            )
+            texts_by_record = decode_sequence_texts(records)
+            metrics = evaluate_sequence_records(records, fold_targets)
+            serialized_records = []
+            for record_idx, record in enumerate(records):
+                serialized_records.append(
+                    {
+                        'pair_id': record['pair_id'],
+                        'steps': [
+                            {
+                                'depth': step_idx + 1,
+                                'dataset': dataset,
+                                'text': texts_by_record[record_idx][step_idx],
+                            }
+                            for step_idx, dataset in enumerate(record['datasets'])
+                        ],
+                    }
+                )
+
+            embeddings_prefix = os.path.join(
+                commons.dreams_path,
+                'sequence-embeddings' + commons.dataset_suffix(orig_ds),
+            )
+            embeddings_filename = commons.data_filename(embeddings_prefix, es, fold)
+            commons.create_directory(commons.dirname(embeddings_filename))
+            np.save(embeddings_filename, embeddings)
+
+            texts_prefix = os.path.join(
+                commons.dreams_path,
+                'sequence-texts' + commons.dataset_suffix(orig_ds),
+            )
+            texts_filename = commons.filename(texts_prefix, es, fold, extension='.json')
+            commons.create_directory(commons.dirname(texts_filename))
+            with open(texts_filename, 'w', encoding='utf-8') as output_file:
+                json.dump(serialized_records, output_file, ensure_ascii=False, indent=2)
+
+            metrics_prefix = os.path.join(
+                commons.dreams_path,
+                'sequence-metrics' + commons.dataset_suffix(orig_ds),
+            )
+            metrics_filename = commons.filename(
+                metrics_prefix, es, fold, extension='.json'
+            )
+            commons.create_directory(commons.dirname(metrics_filename))
+            with open(metrics_filename, 'w', encoding='utf-8') as output_file:
+                json.dump(metrics, output_file, ensure_ascii=False, indent=2)
+
+            print(
+                f'Saved {len(records)} SONAR sequences for {orig_ds} in fold {fold}.'
+            )
+            print(
+                'Sequence metrics for '
+                + f'{orig_ds}: recognition={metrics["recognition_rate"]:.6f}, '
+                + f'cosine={metrics["mean_cosine"]:.6f}, '
+                + f'roundtrip={metrics["mean_cosine_roundtrip"]:.6f}, '
+                + f'l2={metrics["mean_l2"]:.6f}'
+            )
 
 
 ##############################################################################
 # Main section
-
-
-def create_and_train_network(dataset, es):
-    print(f'Memory size (columns): {commons.domain(dataset)}')
-    model_prefix = commons.model_name(dataset, es)
-    stats_prefix = commons.stats_model_name(dataset, es)
-    history, conf_matrix = neural_net.train_network(dataset, model_prefix, es)
-    save_history(history, stats_prefix, es)
-    save_conf_matrix(conf_matrix, '', stats_prefix, es, vmax=1.0)
 
 
 def produce_features_from_data(dataset, es):
@@ -2493,8 +3348,16 @@ def generate_memories(recall_method, proto_kind_suffix, es):
 
 
 def generate_sequences(recall_method, filling_percent, es):
-    sequences, labels = sequences_of_memories(recall_method, filling_percent, es)
-    save_sequences(sequences, labels, es)
+    sequences, labels, targets = sequences_of_memories(recall_method, filling_percent, es)
+    save_sequences(sequences, labels, targets, es)
+
+
+def requested_datasets(dataset_name):
+    if dataset_name is None or dataset_name == 'all':
+        return commons.datasets
+    if dataset_name in commons.datasets:
+        return [dataset_name]
+    raise ValueError(f'Dataset {dataset_name} is not supported.')
 
 
 if __name__ == '__main__':
@@ -2522,45 +3385,37 @@ if __name__ == '__main__':
     # Reading memories parameters
     _prefix = commons.memory_parameters_prefix
     _filename = commons.csv_filename(_prefix)
-    parameters = None
-    parameters = np.genfromtxt(_filename, dtype=float, delimiter=',', skip_header=1)
-    exp_settings = commons.ExperimentSettings(params=parameters)
+    if os.path.exists(_filename):
+        parameters = np.genfromtxt(_filename, dtype=float, delimiter=',', skip_header=1)
+        exp_settings = commons.ExperimentSettings(params=parameters)
+    else:
+        print(f'Memory parameters file not found: {_filename}. Using default parameters.')
+        exp_settings = commons.ExperimentSettings()
     print(f'Working directory: {commons.run_path}')
     print(f'Experimental settings: {exp_settings}')
     np.set_printoptions(linewidth=1024)
     start_of_experiment = time.time()
     # PROCESSING OF MAIN OPTIONS.
     random.seed(0)
-    if args['-n']:
-        _dataset = args['<dataset>']
-        if _dataset in commons.datasets:
-            create_and_train_network(_dataset, exp_settings)
-        else:
-            print(f'Dataset {_dataset} is not supported.')
-    elif args['-f']:
-        _dataset = args['<dataset>']
-        if _dataset in commons.datasets:
-            produce_features_from_data(_dataset, exp_settings)
-        else:
-            print(f'Dataset {_dataset} is not supported.')
+    #if args['-n']:
+    #    _dataset = args['<dataset>']
+    #    if _dataset in commons.datasets:
+    #        create_and_train_network(_dataset, exp_settings)
+    #    else:
+    #        print(f'Dataset {_dataset} is not supported.')
+    if args['-f']:
+        for dataset in requested_datasets(args['<dataset>']):
+            produce_features_from_data(dataset, exp_settings)
     elif args['-c']:
-        _dataset = args['<dataset>']
-        if _dataset in commons.datasets:
-            characterize_features(_dataset, exp_settings)
-        else:
-            print(f'Dataset {_dataset} is not supported.')
+        for dataset in requested_datasets(args['<dataset>']):
+            print(f'Characterizing features for {dataset}...')
+            characterize_features(dataset, exp_settings)
     elif args['-d']:
-        _dataset = args['<dataset>']
-        if _dataset in commons.datasets:
-            describe_dataset(_dataset, exp_settings)
-        else:
-            print(f'Dataset {_dataset} is not supported.')
+        for dataset in requested_datasets(args['<dataset>']):
+            describe_dataset(dataset, exp_settings)
     elif args['-s']:
-        _dataset = args['<dataset>']
-        if _dataset in commons.datasets:
-            run_separate_evaluation(_dataset, exp_settings)
-        else:
-            print(f'Dataset {_dataset} is not supported.')
+        for dataset in requested_datasets(args['<dataset>']):
+            run_separate_evaluation(dataset, exp_settings)
     elif args['-e']:
         run_evaluation(exp_settings)
     elif args['-r']:

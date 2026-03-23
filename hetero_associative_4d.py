@@ -16,7 +16,6 @@ import gc
 import math
 import random
 import numpy as np
-import tensorflow as tf
 import commons
 from associative import AssociativeMemory
 
@@ -56,6 +55,8 @@ class HeteroAssociativeMemory4D:
         self._entropies = np.zeros((self._n, self._p), dtype=np.double)
         self._means = np.zeros((self._n, self._p), dtype=np.double)
         self._updated = True
+        self._es = es
+        self._fold = fold
         # In order to accept partial functions, the borders (_m-1 and _q-1)
         # should not be zero.
         self._set_margins()
@@ -63,18 +64,29 @@ class HeteroAssociativeMemory4D:
         # Set quantizers/dequantizers per dimension.
         self.qudeqs = [nm_qd, pq_qd]
 
-        # Retrieve the classifiers.
-        self.classifiers = []
-        for dataset in commons.datasets:
-            model_prefix = commons.model_name(dataset, es)
-            filename = commons.classifier_filename(model_prefix, es, fold)
-            classifier = tf.keras.models.load_model(filename)
-            self.classifiers.append(classifier)
+        self.classifiers = [None, None]
 
         print(f'Relational memory {self.model_name} {{n: {self.n}, p: {self.p}, ' +
             f'm: {self.m}, q: {self.q}, ' +
             f'xi: {self.xi}, iota: {self.iota}, ' +
             f'kappa: {self.kappa}, sigma: {self.sigma}}}, has been created')
+
+    def _get_classifier(self, dim):
+        classifier = self.classifiers[dim]
+        if classifier is not None:
+            return classifier
+
+        try:
+            import tensorflow as tf
+        except ImportError as exc:
+            raise RuntimeError('TensorFlow is required only for prototype-based recall.') from exc
+
+        dataset = commons.datasets[dim]
+        model_prefix = commons.model_name(dataset, self._es)
+        filename = commons.classifier_filename(model_prefix, self._es, self._fold)
+        classifier = tf.keras.models.load_model(filename)
+        self.classifiers[dim] = classifier
+        return classifier
 
     def __str__(self):
         return f'{{n: {self.n}, p: {self.p}, m: {self.m}, q: {self.q},\n{self.rel_string}}}'
@@ -699,7 +711,7 @@ class HeteroAssociativeMemory4D:
 
     def prototypes_frequencies(self, projection, dim):
         frequencies = []
-        classifier = self.classifiers[dim]
+        classifier = self._get_classifier(dim)
         am = AssociativeMemory.from_relation(projection, self.exp_settings_2d)
         for lbl in commons.all_labels:
             proto = self._prototypes[dim][lbl]

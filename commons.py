@@ -24,14 +24,36 @@ import string
 import time
 import numpy as np
 
-MNIST = 'mnist'
-FASHION = 'fashion'
-EMNIST = 'emnist'
-left_dataset = MNIST
-right_dataset = EMNIST
+left_hf_dataset_id = os.getenv('EHAM_LEFT_HF_DATASET', 'npvinHnivqn/EnglishDictionary')
+right_hf_dataset_id = os.getenv('EHAM_RIGHT_HF_DATASET', left_hf_dataset_id)
+left_hf_dataset_split = os.getenv('EHAM_LEFT_HF_SPLIT', 'train')
+right_hf_dataset_split = os.getenv('EHAM_RIGHT_HF_SPLIT', left_hf_dataset_split)
+hf_split_seed = int(os.getenv('EHAM_HF_SPLIT_SEED', '42'))
+left_dataset = os.getenv('EHAM_LEFT_VIEW', 'word')
+right_dataset = os.getenv('EHAM_RIGHT_VIEW', 'definition')
+
+text_embedding_dim = 1024
+embedding_batch_size = 64
+pair_ids_prefix = 'pair_ids-'
+
 datasets = [left_dataset, right_dataset]
-datasets_to_domains = {left_dataset: 64, right_dataset: 64}
+datasets_to_domains = {left_dataset: text_embedding_dim, right_dataset: text_embedding_dim}
 datasets_to_codomains = {left_dataset: 16, right_dataset: 16}
+
+dataset_columns = {
+    left_dataset: os.getenv('EHAM_LEFT_COLUMN', 'word'),
+    right_dataset: os.getenv('EHAM_RIGHT_COLUMN', 'definition'),
+}
+
+dataset_sources = {
+    left_dataset: (left_hf_dataset_id, left_hf_dataset_split),
+    right_dataset: (right_hf_dataset_id, right_hf_dataset_split),
+}
+
+dataset_max_seq_len = {
+    left_dataset: 64,
+    right_dataset: 512,
+}
 
 
 def alt(dataset):
@@ -83,7 +105,7 @@ sampling_without_search = False
 
 sequence_length = 10
 sequence_recall_fill = 64
-sequence_recall_method = recall_with_protos
+sequence_recall_method = recall_with_sampling_n_search
 
 # Directory where all results are stored.
 data_path = 'data'
@@ -224,7 +246,7 @@ def dataset_suffix(dataset):
     return '-' + dataset
 
 
-n_folds = 10
+n_folds = 1
 n_jobs = 4
 random_string_length = 30
 dreaming_cycles = 6
@@ -269,7 +291,7 @@ sigma_idx = 3
 class ExperimentSettings:
     def __init__(self, *, params=None, iota=None, kappa=None, xi=None, sigma=None):
         if params is None:
-            self.mem_params = params_defaults
+            self.mem_params = np.array(params_defaults, dtype=float)
         else:
             # If not None, it must be a one dimensional array.
             assert isinstance(params, np.ndarray)
@@ -278,7 +300,7 @@ class ExperimentSettings:
             # iota, kappa, xi, sigma
             shape = params.shape
             assert shape[0] == 4
-            self.mem_params = params
+            self.mem_params = np.array(params, dtype=float, copy=True)
         if iota is not None:
             self.mem_params[iota_idx] = iota
         if kappa is not None:
