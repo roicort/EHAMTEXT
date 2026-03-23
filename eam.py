@@ -69,6 +69,7 @@ import qudeq
 import neural_net
 from associative import AssociativeMemory
 from hetero_associative_4d import HeteroAssociativeMemory4D as HeteroAssociativeMemory
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 
 sys.setrecursionlimit(10000)
 
@@ -3043,9 +3044,50 @@ def produce_testing_sequences(
     for orig_ds in commons.datasets:
         sequences[orig_ds] = []
         print(f'Generating sequences starting at {orig_ds}')
-        counter = 0
-        counter_name = commons.set_counter()
-        for feats, pair_id in zip(features[orig_ds], labels[orig_ds]):
+        if len(features[orig_ds]) == 0:
+            continue
+        progress_columns = [
+            TextColumn('[progress.description]{task.description}'),
+            BarColumn(),
+            TextColumn('{task.completed}/{task.total}'),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        ]
+        with Progress(*progress_columns) as progress:
+            task = progress.add_task(f'Seq {orig_ds}', total=len(features[orig_ds]))
+            for feats, pair_id in zip(features[orig_ds], labels[orig_ds]):
+                current_dataset = orig_ds
+                current_features = feats
+                step_datasets = [current_dataset]
+                sequence = [
+                    qds[current_dataset].dequantize(current_features, rows[current_dataset])
+                ]
+                while len(sequence) < commons.sequence_length:
+                    if current_dataset == commons.left_dataset:
+                        current_features, recognized, _, _, _ = hetero.recall_from_left(
+                            current_features, method=recall_method, label=pair_id
+                        )
+                    else:
+                        current_features, recognized, _, _, _ = hetero.recall_from_right(
+                            current_features, method=recall_method, label=pair_id
+                        )
+                    if not recognized:
+                        break
+                    current_dataset = commons.alt(current_dataset)
+                    step_datasets.append(current_dataset)
+                    sequence.append(
+                        qds[current_dataset].dequantize(
+                            current_features, rows[current_dataset]
+                        )
+                    )
+                sequences[orig_ds].append(
+                    {
+                        'pair_id': int(pair_id),
+                        'datasets': step_datasets,
+                        'embeddings': np.array(sequence, dtype=np.float32),
+                    }
+                )
+                progress.advance(task)
             current_dataset = orig_ds
             current_features = feats
             step_datasets = [current_dataset]
